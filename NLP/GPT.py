@@ -10,6 +10,7 @@ eval_interval = 300
 learning_rate = 0.01
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
+n_embed_dims = 32
 
 seed = 1337
 torch.manual_seed(seed)  # seeded randomness
@@ -90,12 +91,25 @@ class BigramLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.embedding_table = nn.Embedding(
-            vocab_size, vocab_size
+            vocab_size, n_embed_dims
         )  # a lookup table where rows are plucked out based on the input token (one-hot encoded)
+        self.positional_embedding = nn.Embedding(
+            block_size, n_embed_dims)  # lookup table for positional embeddings
+
+        self.lm_head = nn.Linear(n_embed_dims, vocab_size)
 
     def forward(self, idx, targets=None):
-        logits = self.embedding_table(
-            idx)  # shape: (batch_size, block_size, vocab_size) OR (B, T, C)
+        B, T = idx.shape
+
+        token_embed = self.embedding_table(
+            idx
+        )  # shape: (batch_size, block_size, n_embed_dims) OR (B, T, n_embed_dims)
+        pos_embed = self.positional_embedding(
+            torch.arange(T, device=device)
+        )  # get the position of the embedding in the sequence (used for self-attention)
+        token = token_embed + pos_embed  # add the positional embedding to the token embedding
+
+        logits = self.lm_head(token)  # (B, T, vocab_size)
 
         # failsafe if true identity of next token is not known
         if targets is None:
@@ -131,7 +145,7 @@ class BigramLanguageModel(nn.Module):
         return idx
 
 
-model = BigramLanguageModel(vocab_size).to(device)
+model = BigramLanguageModel().to(device)
 
 ########### initialize training loop ############
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
