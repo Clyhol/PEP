@@ -87,7 +87,7 @@ def estimate_loss():
 ########### initialize model ############
 class BigramLanguageModel(nn.Module):
 
-    def __init__(self, vocab_size):
+    def __init__(self):
         super().__init__()
         self.embedding_table = nn.Embedding(
             vocab_size, vocab_size
