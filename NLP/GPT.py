@@ -3,17 +3,18 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 # hyperparameters
-batch_size = 32  # how many independent sequences will we process in parallel?
-block_size = 8  # what is the maximum context length for predictions?
+batch_size = 64  # how many independent sequences will we process in parallel?
+block_size = 256  # what is the maximum context length for predictions?
 max_iters = 5000
-eval_interval = 300
+eval_interval = 500
 learning_rate = 0.0003
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-n_embed_dims = 32
-n_layers = 3
-n_heads = 4
+n_embed_dims = 384
+n_heads = 6
+n_layers = 6
 dropout = 0.2
+##########################
 
 seed = 1337
 torch.manual_seed(seed)  # seeded randomness
@@ -99,7 +100,7 @@ class Head(nn.Module):
         self.key = nn.Linear(n_embed_dims, head_size, bias=False)  # linear transformation of token features
         self.query = nn.Linear(n_embed_dims, head_size, bias=False)  # linear transformation of token wants to attend to
         self.value = nn.Linear(n_embed_dims, head_size, bias=False)
-
+        self.dropout = nn.Dropout(dropout)
         self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
 
     def forward(self, x):
@@ -245,5 +246,6 @@ for iter in range(max_iters):
     loss.backward()
     optimizer.step()
 
+torch.save(model.state_dict(), 'pretrained_language_model.pth')
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decoder(model.predict_next(context, max_new_tokens=1000)[0].tolist()))
