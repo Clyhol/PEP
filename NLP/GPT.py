@@ -124,9 +124,11 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, n_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(n_heads)])
+        self.projection = nn.Linear(n_embed_dims, n_embed_dims) # project the concatenated heads into the residual pathway
 
     def forward(self, x):
         head_out = torch.cat([head(x) for head in self.heads], dim=-1)  # (B, T, n_heads * head_size)
+        head_out = self.projection(head_out)  # (B, T, n_heads * head_size) -> (B, T, n_embed_dims)
         return head_out
 
 ########### define feedforward layer ############
@@ -136,8 +138,9 @@ class FeedForward(nn.Module):
     def __init__(self, n_embed_dims):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embed_dims, n_embed_dims),
-            nn.ReLU(),
+            nn.Linear(n_embed_dims, 4 * n_embed_dims), #expand the dimensionality of the input
+            nn.ReLU(), # non-linear transformation
+            nn.Linear(4 * n_embed_dims, n_embed_dims), # projection back to the residual pathway
         )
         
     def forward(self, x):
@@ -150,10 +153,13 @@ class Block(nn.Module):
         head_size = n_embed_dims // n_heads
         self.self_attention = MultiHeadAttention(n_heads, head_size)
         self.feedforward = FeedForward(n_embed_dims)
+        self.layer_norm1 = nn.LayerNorm(n_embed_dims) # layer norm is used to normalize the output of the self-attention layer. This stabilizes the training process
+        self.layer_norm2 = nn.LayerNorm(n_embed_dims)
         
     def forward(self, x):
-        x = self.self_attention(x)
-        x = self.feedforward(x)
+        # layer normalization is applied before and after the self-attention and feedforward layers
+        x = x + self.self_attention(self.layer_norm1(x)) # add x to the output of the self-attention layer (residual connection)
+        x = x + self.feedforward(self.layer_norm2(x)) # add x to the output of the feedforward layer (residual connection)
         return x
 ########### initialize model ############
 class BigramLanguageModel(nn.Module):
@@ -166,6 +172,7 @@ class BigramLanguageModel(nn.Module):
             Block(n_embed_dims, n_heads=4),
             Block(n_embed_dims, n_heads=4),
             Block(n_embed_dims, n_heads=4),
+            nn.LayerNorm(n_embed_dims),
         )
         self.lm_head = nn.Linear(n_embed_dims, vocab_size)
 
@@ -174,9 +181,8 @@ class BigramLanguageModel(nn.Module):
         token_embed = self.embedding_table(idx)  # shape: (batch_size, block_size, n_embed_dims) OR (B, T, n_embed_dims)
         pos_embed = self.positional_embedding_table(torch.arange(T, device=device))  # get the position of the embedding in the sequence (used for self-attention)
         tokens = token_embed + pos_embed  # add the positional embedding to the token embedding
-        tokens = self.sa_heads(tokens)  # apply self-attention
-        
-        self.feedforward(tokens)  # let the model use the self-attention output to predict the next token
+        tokens = self.blocks(tokens)  # apply self-attention
+    
         logits = self.lm_head(tokens)  # (B, T, vocab_size)
 
         # failsafe if true identity of next token is not known
