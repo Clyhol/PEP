@@ -155,4 +155,4 @@ for iter in range(max_iters):
     optimizer.step()
 
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
-print(decoder(model.predict_next(context, max_new_tokens=500)[0].tolist()))
+print(decoder(model.predict_next(context, max_new_tokens=2000)[0].tolist()))
