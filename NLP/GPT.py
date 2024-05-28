@@ -11,6 +11,9 @@ learning_rate = 0.0003
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
 n_embed_dims = 32
+n_layers = 3
+n_heads = 4
+dropout = 0.2
 
 seed = 1337
 torch.manual_seed(seed)  # seeded randomness
@@ -109,6 +112,7 @@ class Head(nn.Module):
         weights = q @ k.transpose(-2,-1) / ((C)**0.5)  # (B, T, head_size) @ (B, head_size, T) -> (B, T, T)
         weights = weights.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
         weights = F.softmax(weights, dim=-1)  # softmax over the time dimension (x-axis)
+        weights = self.dropout(weights)  # dropout is used to prevent overfitting
         
         # apply attention weights to values
         v = self.value(x) # (B, T, C) -> (B, T, head_size)
@@ -125,6 +129,7 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(n_heads)])
         self.projection = nn.Linear(n_embed_dims, n_embed_dims) # project the concatenated heads into the residual pathway
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         head_out = torch.cat([head(x) for head in self.heads], dim=-1)  # (B, T, n_heads * head_size)
@@ -141,6 +146,7 @@ class FeedForward(nn.Module):
             nn.Linear(n_embed_dims, 4 * n_embed_dims), #expand the dimensionality of the input
             nn.ReLU(), # non-linear transformation
             nn.Linear(4 * n_embed_dims, n_embed_dims), # projection back to the residual pathway
+            nn.Dropout(dropout) # dropout is used to prevent overfitting
         )
         
     def forward(self, x):
@@ -168,12 +174,9 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.embedding_table = nn.Embedding(vocab_size, n_embed_dims)  # a lookup table where rows are plucked out based on the input token (one-hot encoded)
         self.positional_embedding_table = nn.Embedding(block_size, n_embed_dims)  # lookup table for positional embeddings
-        self.blocks = nn.Sequential(
-            Block(n_embed_dims, n_heads=4),
-            Block(n_embed_dims, n_heads=4),
-            Block(n_embed_dims, n_heads=4),
-            nn.LayerNorm(n_embed_dims),
-        )
+        self.blocks = nn.Sequential(*[Block(n_embed_dims, n_heads=n_heads) for _ in range(n_layers)])  # stack of blocks
+
+        self.final_layer_norm = nn.LayerNorm(n_embed_dims)
         self.lm_head = nn.Linear(n_embed_dims, vocab_size)
 
     def forward(self, idx, targets=None):
@@ -227,7 +230,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 for iter in range(max_iters):
 
     # every once in a while evaluate the loss on train and val sets
-    if iter % eval_interval == 0:
+    if iter % eval_interval == 0 or iter == max_iters - 1:
         losses = estimate_loss()
         print(
             f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
