@@ -87,6 +87,9 @@ def estimate_loss():
 
 ########### initialize head ############
 class Head(nn.Module):
+    """
+    This defines a single head which will be used in a multiheadded attention layer. The head is responsible for letting a token communicate with previous tokens in the sequence from the same batch. This is done using keys and querys, to find a value for the affinitiy between tokens.
+    """
 
     def __init__(self, head_size):
         super().__init__()
@@ -115,6 +118,9 @@ class Head(nn.Module):
     
 
 class MultiHeadAttention(nn.Module):
+    """
+    Creates a list of heads which are used to let tokens communicate with each other. The heads are then concatenated to form a single output. This is done to allow the model to learn different types of attention patterns.
+    """
     def __init__(self, n_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(n_heads)])
@@ -125,6 +131,8 @@ class MultiHeadAttention(nn.Module):
 
 ########### define feedforward layer ############
 class FeedForward(nn.Module):
+    """A simple feedforward layer with one hidden layer. This layer serves the purpose of doing doing a non-linear transformation of the self-attention output.
+    """
     def __init__(self, n_embed_dims):
         super().__init__()
         self.net = nn.Sequential(
@@ -135,7 +143,18 @@ class FeedForward(nn.Module):
     def forward(self, x):
         return self.net(x)
         
-
+########### define a block of the model ############
+class Block(nn.Module):
+    def __init__(self, n_embed_dims, n_heads):
+        super().__init__()
+        head_size = n_embed_dims // n_heads
+        self.self_attention = MultiHeadAttention(n_heads, head_size)
+        self.feedforward = FeedForward(n_embed_dims)
+        
+    def forward(self, x):
+        x = self.self_attention(x)
+        x = self.feedforward(x)
+        return x
 ########### initialize model ############
 class BigramLanguageModel(nn.Module):
 
@@ -143,8 +162,11 @@ class BigramLanguageModel(nn.Module):
         super().__init__()
         self.embedding_table = nn.Embedding(vocab_size, n_embed_dims)  # a lookup table where rows are plucked out based on the input token (one-hot encoded)
         self.positional_embedding_table = nn.Embedding(block_size, n_embed_dims)  # lookup table for positional embeddings
-        self.sa_heads = MultiHeadAttention(4, n_embed_dims//4)  # 4 heads, each with n_embed_dims/4 dimensions
-        self.feedforward = FeedForward(n_embed_dims)
+        self.blocks = nn.Sequential(
+            Block(n_embed_dims, n_heads=4),
+            Block(n_embed_dims, n_heads=4),
+            Block(n_embed_dims, n_heads=4),
+        )
         self.lm_head = nn.Linear(n_embed_dims, vocab_size)
 
     def forward(self, idx, targets=None):
