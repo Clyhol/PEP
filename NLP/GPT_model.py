@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from tqdm import tqdm
+from datasets import load_dataset
+import re
 
 # hyperparameters
 batch_size = 64  # how many independent sequences will we process in parallel?
@@ -20,14 +23,24 @@ seed = 1337
 torch.manual_seed(seed)  # seeded randomness
 
 ########### initialize dataset ############
+dataset = load_dataset('wikitext', 'wikitext-2-raw-v1')
 
-with open("NLP\\shakespeare.txt", encoding="utf-8") as f:
-    text = f.read()
+def clean_text(text):
+    text = re.sub(r"[^a-zA-Z.,!?\'\":; &1234567890\n]", '', text) # keep only these characters
+    text = re.sub(r'\s+', ' ', text).strip() # remove extra spaces
+    return text
+
+
+text = ' '.join([clean_text(text) for text in dataset['train']['text'] + dataset['validation']['text']]) #type: ignore
 
 chars = sorted(list(set(text)))
 vocab_size = len(
     chars
 )  # note that capital and small letters are treated as different characters
+
+print(f"vocab size: {vocab_size} \nvocab: {chars}")
+
+#print(chars, "\nvocab size:", vocab_size)
 
 ########### encode the text ############
 # create dictionaries to convert characters to integers and vice versa
@@ -228,14 +241,11 @@ model = BigramLanguageModel().to(device)
 ########### initialize training loop ############
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
-for iter in range(max_iters):
-
+for iter in tqdm(range(max_iters)):
     # every once in a while evaluate the loss on train and val sets
     if iter % eval_interval == 0 or iter == max_iters - 1:
         losses = estimate_loss()
-        print(
-            f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
-        )
+        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
     # sample a batch of data
     xb, yb = get_batch('train')
