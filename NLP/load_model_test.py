@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from tqdm import tqdm
+from datasets import load_dataset
+import re
 
 # hyperparameters
 batch_size = 64  # how many independent sequences will we process in parallel?
@@ -20,14 +23,23 @@ seed = 1337
 torch.manual_seed(seed)  # seeded randomness
 
 ########### initialize dataset ############
+dataset = load_dataset('wikitext', 'wikitext-2-raw-v1')
 
-with open("NLP\\shakespeare.txt", encoding="utf-8") as f:
-    text = f.read()
+def clean_text(text):
+    text = re.sub(r"[^a-zA-Z.,!?\'\":; &1234567890\n]", '', text) # keep only these characters
+    text = re.sub(r'\s+', ' ', text).strip() # remove extra spaces
+    return text
+
+text = ' '.join([clean_text(text) for text in dataset['train']['text'] + dataset['validation']['text']]) #type: ignore
 
 chars = sorted(list(set(text)))
 vocab_size = len(
     chars
 )  # note that capital and small letters are treated as different characters
+
+print(f"vocab size: {vocab_size} \nvocab: {chars}")
+
+#print(chars, "\nvocab size:", vocab_size)
 
 ########### encode the text ############
 # create dictionaries to convert characters to integers and vice versa
@@ -169,7 +181,7 @@ class Block(nn.Module):
         x = x + self.feedforward(self.layer_norm2(x)) # add x to the output of the feedforward layer (residual connection)
         return x
 ########### initialize model ############
-class BigramLanguageModel(nn.Module):
+class LanguageModel(nn.Module):
 
     def __init__(self):
         super().__init__()
@@ -223,8 +235,8 @@ class BigramLanguageModel(nn.Module):
         return idx
 
 
-model = BigramLanguageModel().to(device)
-model_path = "NLP\\shakespeare_model.pth"
+model = LanguageModel().to(device)
+model_path = "NLP\\pretrained_language_model.pth"
 
 model.load_state_dict(torch.load(model_path, map_location=device))
 
